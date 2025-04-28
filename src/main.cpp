@@ -15,10 +15,26 @@ constexpr int BEEP_FREQUENCY = 700;
 constexpr int ERROR_FREQUENCY = 300;
 constexpr int LED_ANIMATION_SPEED = 150;
 
+// Animation timing constants
+constexpr unsigned long BEEP_DURATION = 100;
+constexpr unsigned long ERROR_TONE_DURATION = 150;
+constexpr unsigned long LED_FLICKER_MIN = 30;
+constexpr unsigned long LED_FLICKER_MAX = 120;
+
 enum class SystemState {
     SETUP,
     NORMAL,
     ERROR
+};
+
+// === Animation State ===
+struct AnimationState {
+    unsigned long lastUpdateTime = 0;
+    int currentStep = 0;
+    bool isActive = false;
+    int targetLed = -1;
+    int flickerCount = 0;
+    bool ledState = false;
 };
 
 class Button {
@@ -55,6 +71,7 @@ private:
     const int* counterLedPins;
     const int ledCount;
     int lastCounter = -1;
+    AnimationState animationState;
 
 public:
     LedManager(const int* pins, int count)
@@ -72,34 +89,59 @@ public:
             digitalWrite(counterLedPins[i], LOW);
         }
         lastCounter = -1;
+        animationState.isActive = false;
     }
 
     void updateCounterLeds(int counter) {
         int ledsOn = MAX_COUNTER - counter;
 
         if (lastCounter != -1 && counter > lastCounter) {
-            int ledToFlicker = MAX_COUNTER - lastCounter - 1;
-            if (ledToFlicker >= 0 && ledToFlicker < ledCount) {
-                int flickers = random(3, 6);
-                for (int i = 0; i < flickers; i++) {
-                    digitalWrite(counterLedPins[ledToFlicker], LOW);
-                    delay(random(30, 120));
-                    digitalWrite(counterLedPins[ledToFlicker], HIGH);
-                    delay(random(30, 120));
-                }
-                digitalWrite(counterLedPins[ledToFlicker], LOW);
-            }
+            startFlickerAnimation(MAX_COUNTER - lastCounter - 1);
         }
 
-        for (int i = 0; i < ledCount; i++) {
-            if (i < ledsOn) {
-                digitalWrite(counterLedPins[i], HIGH);
-            } else {
-                digitalWrite(counterLedPins[i], LOW);
+        if (!animationState.isActive) {
+            for (int i = 0; i < ledCount; i++) {
+                if (i < ledsOn) {
+                    digitalWrite(counterLedPins[i], HIGH);
+                } else {
+                    digitalWrite(counterLedPins[i], LOW);
+                }
             }
         }
 
         lastCounter = counter;
+    }
+
+    void startFlickerAnimation(int ledIndex) {
+        if (ledIndex >= 0 && ledIndex < ledCount) {
+            animationState.isActive = true;
+            animationState.targetLed = ledIndex;
+            animationState.flickerCount = random(3, 6);
+            animationState.currentStep = 0;
+            animationState.lastUpdateTime = millis();
+            animationState.ledState = false;
+        }
+    }
+
+    void updateAnimation() {
+        if (!animationState.isActive) return;
+
+        unsigned long currentTime = millis();
+        unsigned long elapsedTime = currentTime - animationState.lastUpdateTime;
+
+        if (elapsedTime >= (animationState.ledState ? LED_FLICKER_MAX : LED_FLICKER_MIN)) {
+            animationState.ledState = !animationState.ledState;
+            digitalWrite(counterLedPins[animationState.targetLed], animationState.ledState ? HIGH : LOW);
+            animationState.lastUpdateTime = currentTime;
+
+            if (!animationState.ledState) {
+                animationState.currentStep++;
+                if (animationState.currentStep >= animationState.flickerCount) {
+                    animationState.isActive = false;
+                    digitalWrite(counterLedPins[animationState.targetLed], LOW);
+                }
+            }
+        }
     }
 
     void animateCounterLeds(int counter) {
@@ -136,6 +178,13 @@ public:
 class SoundManager {
 private:
     const int pin;
+    unsigned long lastBeepTime = 0;
+    int beepCount = 0;
+    bool isBeeping = false;
+    bool isErrorTone = false;
+    bool isSweeping = false;
+    unsigned long sweepStartTime = 0;
+    float sweepProgress = 0.0f;
 
 public:
     SoundManager(int pin) : pin(pin) {
@@ -143,29 +192,66 @@ public:
     }
 
     void playConfirmationBeep() {
-        for (int i = 0; i < 3; i++) {
-            tone(pin, BEEP_FREQUENCY);
-            delay(100);
-            noTone(pin);
-            delay(100);
-        }
+        beepCount = 3;
+        isBeeping = true;
+        lastBeepTime = millis();
+        tone(pin, BEEP_FREQUENCY);
     }
 
     void playErrorTone() {
+        isErrorTone = true;
+        lastBeepTime = millis();
         tone(pin, BEEP_FREQUENCY);
-        delay(150);
-        tone(pin, ERROR_FREQUENCY);
-        delay(150);
-        noTone(pin);
     }
 
     void playSweepTone(float progress) {
+        if (!isSweeping) {
+            isSweeping = true;
+            sweepStartTime = millis();
+        }
+        sweepProgress = progress;
         int freq = ERROR_FREQUENCY + (progress * (BEEP_FREQUENCY - ERROR_FREQUENCY));
         tone(pin, freq);
     }
 
     void stopTone() {
         noTone(pin);
+        isBeeping = false;
+        isErrorTone = false;
+        isSweeping = false;
+        beepCount = 0;
+    }
+
+    void update() {
+        unsigned long currentTime = millis();
+
+        if (isBeeping) {
+            if (currentTime - lastBeepTime >= BEEP_DURATION) {
+                if (digitalRead(pin) == HIGH) {
+                    noTone(pin);
+                    lastBeepTime = currentTime;
+                } else {
+                    if (beepCount > 0) {
+                        tone(pin, BEEP_FREQUENCY);
+                        beepCount--;
+                    } else {
+                        isBeeping = false;
+                    }
+                }
+            }
+        }
+
+        if (isErrorTone) {
+            if (currentTime - lastBeepTime >= ERROR_TONE_DURATION) {
+                if (digitalRead(pin) == HIGH) {
+                    tone(pin, ERROR_FREQUENCY);
+                } else {
+                    isErrorTone = false;
+                    noTone(pin);
+                }
+                lastBeepTime = currentTime;
+            }
+        }
     }
 };
 
@@ -201,6 +287,10 @@ public:
         } else {
             handleNormalState();
         }
+
+        // Update animations and sounds
+        leds.updateAnimation();
+        sound.update();
     }
 
     void begin() {
@@ -371,6 +461,7 @@ DeviceSystem deviceSystem;
 
 void setup() {
     Serial.begin(9600);
+    randomSeed(analogRead(0));  // Seed random number generator
     deviceSystem.begin();
 }
 
