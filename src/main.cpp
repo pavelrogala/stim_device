@@ -70,7 +70,7 @@ public:
     }
 
     void updateCounterLeds(int counter) {
-        int ledsOn = ledCount - counter;
+        int ledsOn = MAX_COUNTER - counter;
         for (int i = 0; i < ledCount; i++) {
             digitalWrite(counterLedPins[i], (i < ledsOn) ? HIGH : LOW);
         }
@@ -172,6 +172,12 @@ public:
 
         if (actionInProgress) {
             handleActionInProgress();
+        } else if (actionButton.wasJustReleased()) {
+            // Reset action state if button was released before completion
+            actionInProgress = false;
+            sound.stopTone();
+            leds.setActionStarted(false);
+            leds.setActionCompleted(false);
         }
 
         if (actionButton.wasJustReleased()) {
@@ -180,6 +186,7 @@ public:
                 counter++;
                 Serial.print("Counter incremented to: ");
                 Serial.println(counter);
+                updateDisplay(); // Force update display after counter change
             }
         }
 
