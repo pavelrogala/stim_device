@@ -1,19 +1,21 @@
 #include <Arduino.h>
 
 // Pin definitions
-const int deviceButtonPin = 2;    // Device activation button (D2)
-const int actionButtonPin = 10;   // Action button (D10)
-const int ledActionStartedPin = 13; // LED for action started (D13)
-const int ledActionCompletedPin = 8; // LED for action completed (D8)
-const int buzzerPin = 9;           // Piezo buzzer (D9)
-const int counterLedPins[5] = {3, 4, 5, 6, 7}; // Counter LEDs
+const int deviceButtonPin = 2;
+const int actionButtonPin = 10;
+const int ledActionStartedPin = 13;
+const int ledActionCompletedPin = 8;
+const int buzzerPin = 9;
+const int counterLedPins[5] = {3, 4, 5, 6, 7};
 
 // Variables
 int counter = 0;
 bool errorState = false;
 bool deviceButtonPreviouslyPressed = false;
 bool actionButtonPreviouslyPressed = false;
+bool actionInProgress = false;
 bool actionDoneThisCycle = false;
+unsigned long actionStartTime = 0;
 unsigned long deviceButtonReleaseTime = 0;
 bool displayCounter = false;
 
@@ -58,17 +60,6 @@ void playConfirmationBeep() {
   }
 }
 
-void playSweepTone(unsigned long durationMs) {
-  unsigned long startTime = millis();
-  while (millis() - startTime < durationMs) {
-    float progress = (float)(millis() - startTime) / durationMs;
-    int freq = 300 + (progress * (700 - 300));
-    tone(buzzerPin, freq);
-    delay(10);
-  }
-  noTone(buzzerPin);
-}
-
 void playErrorTone() {
   tone(buzzerPin, 700);
   delay(150);
@@ -93,22 +84,54 @@ void loop() {
     }
     deviceButtonPreviouslyPressed = deviceButtonPressed;
     actionButtonPreviouslyPressed = actionButtonPressed;
-    return; // Nothing else allowed
+    return;
   }
 
-  // Normal behavior
+  // Device button logic
   if (deviceButtonPressed) {
-    deviceButtonReleaseTime = millis(); // Reset release timer
+    deviceButtonReleaseTime = millis();
     displayCounter = true;
 
-    if (!actionDoneThisCycle && actionButtonPressed) {
-      actionDoneThisCycle = true; // Only allow once per D2 press
-      digitalWrite(ledActionStartedPin, HIGH);
+    if (!actionDoneThisCycle) {
+      // Handle action button being pressed
+      if (actionButtonPressed && !actionButtonPreviouslyPressed) {
+        actionInProgress = true;
+        actionStartTime = millis();
+        digitalWrite(ledActionStartedPin, HIGH);
+      }
+    }
+  } else {
+    if (millis() - deviceButtonReleaseTime >= 5000) {
+      displayCounter = false;
+    }
+    actionDoneThisCycle = false;
+    actionInProgress = false;
+    digitalWrite(ledActionStartedPin, LOW);
+  }
 
-      // Start sweep tone and wait for 2s
-      playSweepTone(2000);
+  // Handle action in progress
+  if (actionInProgress) {
+    unsigned long heldDuration = millis() - actionStartTime;
 
-      // After 2s
+    // Sweep tone during hold
+    float progress = (float)heldDuration / 2000.0;
+    if (progress > 1.0) progress = 1.0;
+    int freq = 300 + (progress * (700 - 300));
+    tone(buzzerPin, freq);
+
+    // If action button released early -> cancel
+    if (!actionButtonPressed) {
+      actionInProgress = false;
+      noTone(buzzerPin);
+      digitalWrite(ledActionStartedPin, LOW);
+    }
+
+    // If held for 2 seconds -> complete the action
+    if (heldDuration >= 2000 && !actionDoneThisCycle) {
+      actionDoneThisCycle = true;
+      actionInProgress = false;
+      noTone(buzzerPin);
+
       digitalWrite(ledActionStartedPin, LOW);
       digitalWrite(ledActionCompletedPin, HIGH);
 
@@ -120,26 +143,21 @@ void loop() {
 
       playConfirmationBeep();
     }
-  } else {
-    if (millis() - deviceButtonReleaseTime >= 5000) {
-      displayCounter = false;
-    }
-    actionDoneThisCycle = false;
-    digitalWrite(ledActionStartedPin, LOW);
-    // No change to ledActionCompletedPin here; we'll handle it below based on D10
   }
 
-  // New: Turn OFF D8 when action button is released
+  // Turn OFF ledActionCompletedPin when action button released
   if (!actionButtonPressed && actionButtonPreviouslyPressed) {
     digitalWrite(ledActionCompletedPin, LOW);
   }
 
+  // Update counter LEDs
   if (displayCounter) {
     updateCounterLeds();
   } else {
     turnOffCounterLeds();
   }
 
+  // Enter error state if counter reaches 5 and device button is released
   if (counter >= 5 && !errorState && !deviceButtonPressed) {
     errorState = true;
     Serial.println("Entering Error State!");
