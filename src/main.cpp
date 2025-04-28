@@ -14,7 +14,6 @@ constexpr unsigned long DISPLAY_TIMEOUT_MS = 5000;
 constexpr int BEEP_FREQUENCY = 700;
 constexpr int ERROR_FREQUENCY = 300;
 constexpr int LED_ANIMATION_SPEED = 150;
-constexpr int FLICKER_DELAY = 100; // Flicker delay in ms
 
 enum class SystemState {
     NORMAL,
@@ -54,6 +53,7 @@ class LedManager {
 private:
     const int* counterLedPins;
     const int ledCount;
+    int lastCounter = -1; // Store the last known counter to detect changes
 
 public:
     LedManager(const int* pins, int count)
@@ -70,26 +70,38 @@ public:
         for (int i = 0; i < ledCount; i++) {
             digitalWrite(counterLedPins[i], LOW);
         }
-    }
-
-    void flickerCounterLeds() {
-        for (int flicker = 0; flicker < 2; flicker++) {
-            for (int i = 0; i < ledCount; i++) {
-                digitalWrite(counterLedPins[i], HIGH);
-            }
-            delay(FLICKER_DELAY);
-            for (int i = 0; i < ledCount; i++) {
-                digitalWrite(counterLedPins[i], LOW);
-            }
-            delay(FLICKER_DELAY);
-        }
+        lastCounter = -1; // Reset
     }
 
     void updateCounterLeds(int counter) {
         int ledsOn = MAX_COUNTER - counter;
-        for (int i = 0; i < ledCount; i++) {
-            digitalWrite(counterLedPins[i], (i < ledsOn) ? HIGH : LOW);
+
+        if (lastCounter != -1 && counter > lastCounter) {
+            // Counter increased -> Flicker the LED that will now disappear
+            int ledToFlicker = MAX_COUNTER - lastCounter - 1;
+            if (ledToFlicker >= 0 && ledToFlicker < ledCount) {
+                int flickers = random(3, 6); // 3–5 flickers
+                for (int i = 0; i < flickers; i++) {
+                    digitalWrite(counterLedPins[ledToFlicker], LOW);
+                    delay(random(30, 120));
+                    digitalWrite(counterLedPins[ledToFlicker], HIGH);
+                    delay(random(30, 120));
+                }
+                digitalWrite(counterLedPins[ledToFlicker], LOW); // Finally OFF
+            }
         }
+      
+
+        // Now set all LEDs based on the new counter
+        for (int i = 0; i < ledCount; i++) {
+            if (i < ledsOn) {
+                digitalWrite(counterLedPins[i], HIGH);
+            } else {
+                digitalWrite(counterLedPins[i], LOW);
+            }
+        }
+
+        lastCounter = counter; // Save for next update
     }
 
     void animateCounterLeds(int counter) {
@@ -181,7 +193,6 @@ public:
 
 private:
     void handleErrorState() {
-        leds.flickerCounterLeds();
         leds.turnOffCounterLeds();
         leds.setActionStarted(false);
         leds.setActionCompleted(false);
@@ -211,9 +222,6 @@ private:
             }
         } else {
             if (millis() - deviceButtonReleaseTime >= DISPLAY_TIMEOUT_MS) {
-                if (displayCounter) {
-                    leds.flickerCounterLeds();
-                }
                 displayCounter = false;
                 leds.turnOffCounterLeds();
             }
@@ -299,7 +307,6 @@ private:
         if (displayCounter) {
             leds.updateCounterLeds(counter);
         } else {
-            leds.flickerCounterLeds();
             leds.turnOffCounterLeds();
         }
     }
@@ -307,7 +314,6 @@ private:
     void enterErrorState() {
         state = SystemState::ERROR;
         Serial.println("Entering Error State!");
-        leds.flickerCounterLeds();
         leds.turnOffCounterLeds();
         leds.setActionStarted(false);
         leds.setActionCompleted(false);
