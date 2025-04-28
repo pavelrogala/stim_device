@@ -51,7 +51,7 @@ void updateCounterLeds() {
 
 void playConfirmationBeep() {
   for (int i = 0; i < 3; i++) {
-    tone(buzzerPin, 300);
+    tone(buzzerPin, 700);
     delay(100);
     noTone(buzzerPin);
     delay(100);
