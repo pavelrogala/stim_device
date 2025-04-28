@@ -176,6 +176,11 @@ public:
 
         if (actionButton.wasJustReleased()) {
             leds.setActionCompleted(false);
+            if (actionDoneThisCycle && counter < MAX_COUNTER) {
+                counter++;
+                Serial.print("Counter incremented to: ");
+                Serial.println(counter);
+            }
         }
 
         updateDisplay();
@@ -222,13 +227,6 @@ private:
         sound.stopTone();
         leds.setActionStarted(false);
         leds.setActionCompleted(true);
-
-        if (counter < MAX_COUNTER) {
-            counter++;
-            Serial.print("Counter incremented to: ");
-            Serial.println(counter);
-        }
-
         sound.playConfirmationBeep();
     }
 
