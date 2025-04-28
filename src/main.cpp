@@ -21,7 +21,7 @@ void setup() {
 
   for (int i = 0; i < 10; i++) {
     pinMode(ledBarPins[i], OUTPUT);
-    digitalWrite(ledBarPins[i], LOW);
+    digitalWrite(ledBarPins[i], HIGH);
   }
 
   Serial.begin(9600);
@@ -29,7 +29,7 @@ void setup() {
 
 void updateLedBar(int value) {
   for (int i = 0; i < 10; i++) {
-    digitalWrite(ledBarPins[i], (i < value) ? HIGH : LOW);
+    digitalWrite(ledBarPins[i], (i < value) ? LOW : HIGH);
   }
 }
 
@@ -75,7 +75,7 @@ void loop() {
           sweepingTone = false;
 
           // Increment counter
-          if (counter < 10) {
+          if (counter < 5) {
             counter++;
           }
           Serial.print("Counter: ");
