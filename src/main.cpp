@@ -62,7 +62,7 @@ void playSweepTone(unsigned long durationMs) {
   unsigned long startTime = millis();
   while (millis() - startTime < durationMs) {
     float progress = (float)(millis() - startTime) / durationMs;
-    int freq = 700 - (progress * (700 - 300));
+    int freq = 300 + (progress * (700 - 300));
     tone(buzzerPin, freq);
     delay(10);
   }
