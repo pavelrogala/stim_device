@@ -200,6 +200,13 @@ private:
 
         if (deviceButton.wasJustPressed()) {
             sound.playErrorTone();
+
+            for (int i = 0; i < 3; i++) {
+              digitalWrite(LED_ACTION_STARTED_PIN, HIGH);
+              delay(150);
+              digitalWrite(LED_ACTION_STARTED_PIN, LOW);
+              delay(150);
+          }
         }
     }
 
