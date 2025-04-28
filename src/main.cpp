@@ -14,6 +14,7 @@ constexpr unsigned long DISPLAY_TIMEOUT_MS = 5000;
 constexpr int BEEP_FREQUENCY = 700;
 constexpr int ERROR_FREQUENCY = 300;
 constexpr int LED_ANIMATION_SPEED = 150;
+constexpr int FLICKER_DELAY = 100; // Flicker delay in ms
 
 enum class SystemState {
     NORMAL,
@@ -68,6 +69,19 @@ public:
     void turnOffCounterLeds() {
         for (int i = 0; i < ledCount; i++) {
             digitalWrite(counterLedPins[i], LOW);
+        }
+    }
+
+    void flickerCounterLeds() {
+        for (int flicker = 0; flicker < 2; flicker++) {
+            for (int i = 0; i < ledCount; i++) {
+                digitalWrite(counterLedPins[i], HIGH);
+            }
+            delay(FLICKER_DELAY);
+            for (int i = 0; i < ledCount; i++) {
+                digitalWrite(counterLedPins[i], LOW);
+            }
+            delay(FLICKER_DELAY);
         }
     }
 
@@ -167,6 +181,7 @@ public:
 
 private:
     void handleErrorState() {
+        leds.flickerCounterLeds();
         leds.turnOffCounterLeds();
         leds.setActionStarted(false);
         leds.setActionCompleted(false);
@@ -196,6 +211,9 @@ private:
             }
         } else {
             if (millis() - deviceButtonReleaseTime >= DISPLAY_TIMEOUT_MS) {
+                if (displayCounter) {
+                    leds.flickerCounterLeds();
+                }
                 displayCounter = false;
                 leds.turnOffCounterLeds();
             }
@@ -281,6 +299,7 @@ private:
         if (displayCounter) {
             leds.updateCounterLeds(counter);
         } else {
+            leds.flickerCounterLeds();
             leds.turnOffCounterLeds();
         }
     }
@@ -288,6 +307,7 @@ private:
     void enterErrorState() {
         state = SystemState::ERROR;
         Serial.println("Entering Error State!");
+        leds.flickerCounterLeds();
         leds.turnOffCounterLeds();
         leds.setActionStarted(false);
         leds.setActionCompleted(false);
