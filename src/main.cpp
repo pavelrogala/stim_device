@@ -142,6 +142,15 @@ public:
         , leds(COUNTER_LED_PINS, MAX_COUNTER)
         , sound(BUZZER_PIN) {}
 
+    void update() {
+        if (state == SystemState::ERROR) {
+            handleErrorState();
+        } else {
+            handleNormalState();
+        }
+    }
+
+private:
     void handleErrorState() {
         leds.turnOffCounterLeds();
         leds.setActionStarted(false);
@@ -157,6 +166,7 @@ public:
         if (deviceButton.isPressed()) {
             deviceButtonReleaseTime = millis();
             displayCounter = true;
+            updateDisplay(); // Immediate update when device button is pressed
 
             if (!actionDoneThisCycle && actionButton.wasJustPressed()) {
                 startAction();
@@ -164,6 +174,7 @@ public:
         } else {
             if (millis() - deviceButtonReleaseTime >= DISPLAY_TIMEOUT_MS) {
                 displayCounter = false;
+                updateDisplay(); // Force update when hiding counter
             }
             actionDoneThisCycle = false;
             actionInProgress = false;
@@ -173,39 +184,14 @@ public:
         if (actionInProgress) {
             handleActionInProgress();
         } else if (actionButton.wasJustReleased()) {
-            // Reset action state if button was released before completion
-            actionInProgress = false;
-            sound.stopTone();
-            leds.setActionStarted(false);
             leds.setActionCompleted(false);
         }
-
-        if (actionButton.wasJustReleased()) {
-            leds.setActionCompleted(false);
-            if (actionDoneThisCycle && counter < MAX_COUNTER) {
-                counter++;
-                Serial.print("Counter incremented to: ");
-                Serial.println(counter);
-                updateDisplay(); // Force update display after counter change
-            }
-        }
-
-        updateDisplay();
 
         if (counter >= MAX_COUNTER && !deviceButton.isPressed()) {
             enterErrorState();
         }
     }
 
-    void update() {
-        if (state == SystemState::ERROR) {
-            handleErrorState();
-        } else {
-            handleNormalState();
-        }
-    }
-
-private:
     void startAction() {
         actionInProgress = true;
         actionStartTime = millis();
@@ -234,12 +220,25 @@ private:
         sound.stopTone();
         leds.setActionStarted(false);
         leds.setActionCompleted(true);
+
+        if (counter < MAX_COUNTER) {
+            counter++;
+        }
+
         sound.playConfirmationBeep();
+        updateDisplay();
+
+        Serial.print("Action completed. Counter: ");
+        Serial.println(counter);
     }
 
     void updateDisplay() {
         if (displayCounter) {
             leds.updateCounterLeds(counter);
+            Serial.print("Updating display - Counter: ");
+            Serial.print(counter);
+            Serial.print(", LEDs on: ");
+            Serial.println(MAX_COUNTER - counter);
         } else {
             leds.turnOffCounterLeds();
         }
