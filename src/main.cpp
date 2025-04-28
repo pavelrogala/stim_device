@@ -16,6 +16,7 @@ constexpr int ERROR_FREQUENCY = 300;
 constexpr int LED_ANIMATION_SPEED = 150;
 
 enum class SystemState {
+    SETUP,
     NORMAL,
     ERROR
 };
@@ -53,7 +54,7 @@ class LedManager {
 private:
     const int* counterLedPins;
     const int ledCount;
-    int lastCounter = -1; // Store the last known counter to detect changes
+    int lastCounter = -1;
 
 public:
     LedManager(const int* pins, int count)
@@ -70,29 +71,26 @@ public:
         for (int i = 0; i < ledCount; i++) {
             digitalWrite(counterLedPins[i], LOW);
         }
-        lastCounter = -1; // Reset
+        lastCounter = -1;
     }
 
     void updateCounterLeds(int counter) {
         int ledsOn = MAX_COUNTER - counter;
 
         if (lastCounter != -1 && counter > lastCounter) {
-            // Counter increased -> Flicker the LED that will now disappear
             int ledToFlicker = MAX_COUNTER - lastCounter - 1;
             if (ledToFlicker >= 0 && ledToFlicker < ledCount) {
-                int flickers = random(3, 6); // 3–5 flickers
+                int flickers = random(3, 6);
                 for (int i = 0; i < flickers; i++) {
                     digitalWrite(counterLedPins[ledToFlicker], LOW);
                     delay(random(30, 120));
                     digitalWrite(counterLedPins[ledToFlicker], HIGH);
                     delay(random(30, 120));
                 }
-                digitalWrite(counterLedPins[ledToFlicker], LOW); // Finally OFF
+                digitalWrite(counterLedPins[ledToFlicker], LOW);
             }
         }
-      
 
-        // Now set all LEDs based on the new counter
         for (int i = 0; i < ledCount; i++) {
             if (i < ledsOn) {
                 digitalWrite(counterLedPins[i], HIGH);
@@ -101,7 +99,7 @@ public:
             }
         }
 
-        lastCounter = counter; // Save for next update
+        lastCounter = counter;
     }
 
     void animateCounterLeds(int counter) {
@@ -121,6 +119,17 @@ public:
 
     void setActionCompleted(bool on) {
         digitalWrite(LED_ACTION_COMPLETED_PIN, on ? HIGH : LOW);
+    }
+
+    void updateSetupDisplay(int setupCounter) {
+        int ledsOn = MAX_COUNTER - setupCounter;
+        for (int i = 0; i < MAX_COUNTER; i++) {
+            if (i < ledsOn) {
+                digitalWrite(counterLedPins[i], HIGH);
+            } else {
+                digitalWrite(counterLedPins[i], LOW);
+            }
+        }
     }
 };
 
@@ -166,8 +175,9 @@ private:
     Button actionButton;
     LedManager leds;
     SoundManager sound;
-    SystemState state = SystemState::NORMAL;
+    SystemState state = SystemState::SETUP;
     int counter = 0;
+    int setupCounter = 0;
     bool pendingCounterIncrement = false;
     bool actionInProgress = false;
     bool actionDoneThisCycle = false;
@@ -186,9 +196,15 @@ public:
     void update() {
         if (state == SystemState::ERROR) {
             handleErrorState();
+        } else if (state == SystemState::SETUP) {
+            handleSetupState();
         } else {
             handleNormalState();
         }
+    }
+
+    void begin() {
+        leds.updateSetupDisplay(setupCounter);
     }
 
 private:
@@ -202,11 +218,34 @@ private:
             sound.playErrorTone();
 
             for (int i = 0; i < 3; i++) {
-              digitalWrite(LED_ACTION_STARTED_PIN, HIGH);
-              delay(150);
-              digitalWrite(LED_ACTION_STARTED_PIN, LOW);
-              delay(150);
-          }
+                digitalWrite(LED_ACTION_STARTED_PIN, HIGH);
+                delay(150);
+                digitalWrite(LED_ACTION_STARTED_PIN, LOW);
+                delay(150);
+            }
+        }
+    }
+
+    void handleSetupState() {
+        if (deviceButton.wasJustPressed()) {
+            if (setupCounter < MAX_COUNTER - 1) {
+                setupCounter++;
+                leds.updateSetupDisplay(setupCounter);
+                Serial.print("Setup: LEDs turned off = ");
+                Serial.println(setupCounter);
+            } else {
+                sound.playErrorTone();
+                Serial.println("Setup: Cannot have 0 lives!");
+            }
+        }
+
+        if (actionButton.wasJustPressed()) {
+            counter = setupCounter;
+            displayCounter = true;
+            leds.updateCounterLeds(counter);
+            state = SystemState::NORMAL;
+            sound.playConfirmationBeep();
+            Serial.println("Setup complete. Starting game...");
         }
     }
 
@@ -332,6 +371,7 @@ DeviceSystem deviceSystem;
 
 void setup() {
     Serial.begin(9600);
+    deviceSystem.begin();
 }
 
 void loop() {
