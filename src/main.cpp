@@ -1,58 +1,24 @@
 #include <Arduino.h>
 
 // Pin definitions
-const int deviceActivationButtonPin = 2; // D2
-const int actionButtonPin = 10;           // D10
-const int ledActionStartedPin = 13;       // D13
-const int ledActionCompletedPin = 8;      // D8
-const int buzzerPin = 9;                  // D9
-
-const int counterLedPins[5] = {3, 4, 5, 6, 7}; // D3-D7
+const int deviceButtonPin = 2;    // Device activation button (D2)
+const int actionButtonPin = 10;   // Action button (D10)
+const int ledActionStartedPin = 13; // LED for action started (D13)
+const int ledActionCompletedPin = 8; // LED for action completed (D8)
+const int buzzerPin = 9;           // Piezo buzzer (D9)
+const int counterLedPins[5] = {3, 4, 5, 6, 7}; // Counter LEDs
 
 // Variables
 int counter = 0;
 bool errorState = false;
-
-unsigned long deviceButtonReleaseTime = 0;
 bool deviceButtonPreviouslyPressed = false;
-bool actionAlreadyDoneThisPress = false;
-
-// Function to turn off all counter LEDs
-void turnOffCounterLeds() {
-  for (int i = 0; i < 5; i++) {
-    digitalWrite(counterLedPins[i], LOW);
-  }
-}
-
-// Function to update counter LEDs based on counter value
-void updateCounterLeds() {
-  int ledsToLight = 5 - counter;
-  for (int i = 0; i < 5; i++) {
-    digitalWrite(counterLedPins[i], (i < ledsToLight) ? HIGH : LOW);
-  }
-}
-
-// Function to play error tone (after reaching counter 5)
-void playErrorTone() {
-  tone(buzzerPin, 700);
-  delay(150);
-  tone(buzzerPin, 300);
-  delay(150);
-  noTone(buzzerPin);
-}
-
-// Function to play success beeps (after valid action)
-void playSuccessBeeps() {
-  for (int i = 0; i < 3; i++) {
-    tone(buzzerPin, 300);
-    delay(100);
-    noTone(buzzerPin);
-    delay(100);
-  }
-}
+bool actionButtonPreviouslyPressed = false;
+bool actionDoneThisCycle = false;
+unsigned long deviceButtonReleaseTime = 0;
+bool displayCounter = false;
 
 void setup() {
-  pinMode(deviceActivationButtonPin, INPUT_PULLUP);
+  pinMode(deviceButtonPin, INPUT_PULLUP);
   pinMode(actionButtonPin, INPUT_PULLUP);
   pinMode(ledActionStartedPin, OUTPUT);
   pinMode(ledActionCompletedPin, OUTPUT);
@@ -65,97 +31,124 @@ void setup() {
 
   digitalWrite(ledActionStartedPin, LOW);
   digitalWrite(ledActionCompletedPin, LOW);
+  noTone(buzzerPin);
 
   Serial.begin(9600);
 }
 
-void loop() {
-  bool deviceButtonPressed = digitalRead(deviceActivationButtonPin) == LOW;
-  bool actionButtonPressed = digitalRead(actionButtonPin) == LOW;
-  static bool actionInProgress = false;
-  static unsigned long actionStartTime = 0;
-  static bool sweeping = false;
+void turnOffCounterLeds() {
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(counterLedPins[i], LOW);
+  }
+}
 
-  // First, handle Error State
+void updateCounterLeds() {
+  int ledsOn = 5 - counter;
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(counterLedPins[i], (i < ledsOn) ? HIGH : LOW);
+  }
+}
+
+void playConfirmationBeep() {
+  for (int i = 0; i < 3; i++) {
+    tone(buzzerPin, 300);
+    delay(100);
+    noTone(buzzerPin);
+    delay(100);
+  }
+}
+
+void playSweepTone(unsigned long durationMs) {
+  unsigned long startTime = millis();
+  while (millis() - startTime < durationMs) {
+    float progress = (float)(millis() - startTime) / durationMs;
+    int freq = 700 - (progress * (700 - 300));
+    tone(buzzerPin, freq);
+    delay(10);
+  }
+  noTone(buzzerPin);
+}
+
+void playErrorTone() {
+  tone(buzzerPin, 700);
+  delay(150);
+  tone(buzzerPin, 300);
+  delay(150);
+  noTone(buzzerPin);
+}
+
+void loop() {
+  bool deviceButtonPressed = digitalRead(deviceButtonPin) == LOW;
+  bool actionButtonPressed = digitalRead(actionButtonPin) == LOW;
+
+  // Handle error state
   if (errorState) {
+    turnOffCounterLeds();
+    digitalWrite(ledActionStartedPin, LOW);
+    digitalWrite(ledActionCompletedPin, LOW);
+    noTone(buzzerPin);
+
     if (deviceButtonPressed && !deviceButtonPreviouslyPressed) {
       playErrorTone();
     }
     deviceButtonPreviouslyPressed = deviceButtonPressed;
-    return; // No other interaction allowed
+    actionButtonPreviouslyPressed = actionButtonPressed;
+    return; // Nothing else allowed
   }
 
-  // Manage Counter LEDs visibility
+  // Normal behavior
   if (deviceButtonPressed) {
-    updateCounterLeds();
-    deviceButtonReleaseTime = millis(); // Reset the 5s timer
-  } else {
-    // After release, keep LEDs on for 5 seconds
-    if (millis() - deviceButtonReleaseTime < 5000) {
-      updateCounterLeds();
-    } else {
-      turnOffCounterLeds();
-    }
-  }
+    deviceButtonReleaseTime = millis(); // Reset release timer
+    displayCounter = true;
 
-  // Only allow action logic if device button is pressed
-  if (deviceButtonPressed && !actionAlreadyDoneThisPress) {
-    if (actionButtonPressed && !actionInProgress) {
-      // Start new action
-      actionStartTime = millis();
-      actionInProgress = true;
-      sweeping = true;
+    if (!actionDoneThisCycle && actionButtonPressed) {
+      actionDoneThisCycle = true; // Only allow once per D2 press
       digitalWrite(ledActionStartedPin, HIGH);
-    }
-  }
 
-  if (actionInProgress) {
-    if (!actionButtonPressed) {
-      // Action button released too early, cancel action
-      actionInProgress = false;
-      sweeping = false;
+      // Start sweep tone and wait for 2s
+      playSweepTone(2000);
+
+      // After 2s
       digitalWrite(ledActionStartedPin, LOW);
-      noTone(buzzerPin);
-    } else {
-      unsigned long heldTime = millis() - actionStartTime;
+      digitalWrite(ledActionCompletedPin, HIGH);
 
-      if (heldTime >= 2000) {
-        // Action completed after 2s
-        actionInProgress = false;
-        sweeping = false;
-        actionAlreadyDoneThisPress = true; // Prevent re-trigger during same D2 press
-
-        digitalWrite(ledActionStartedPin, LOW);
-        digitalWrite(ledActionCompletedPin, HIGH);
-
-        noTone(buzzerPin); // Stop sweep
-
-        if (counter < 5) {
-          counter++;
-          playSuccessBeeps();
-          Serial.print("Counter incremented: ");
-          Serial.println(counter);
-        }
-
-        if (counter >= 5) {
-          errorState = true;
-          Serial.println("Entering Error State!");
-        }
-      } else {
-        // During 2s hold, sweeping tone from 700Hz to 300Hz
-        if (sweeping) {
-          int sweepFreq = 700 - (400.0 * heldTime / 2000);
-          tone(buzzerPin, sweepFreq);
-        }
+      if (counter < 5) {
+        counter++;
+        Serial.print("Counter incremented to: ");
+        Serial.println(counter);
       }
+
+      playConfirmationBeep();
     }
+  } else {
+    if (millis() - deviceButtonReleaseTime >= 5000) {
+      displayCounter = false;
+    }
+    actionDoneThisCycle = false;
+    digitalWrite(ledActionStartedPin, LOW);
+    // No change to ledActionCompletedPin here; we'll handle it below based on D10
   }
 
-  if (!deviceButtonPressed) {
+  // New: Turn OFF D8 when action button is released
+  if (!actionButtonPressed && actionButtonPreviouslyPressed) {
+    digitalWrite(ledActionCompletedPin, LOW);
+  }
+
+  if (displayCounter) {
+    updateCounterLeds();
+  } else {
+    turnOffCounterLeds();
+  }
+
+  if (counter >= 5 && !errorState && !deviceButtonPressed) {
+    errorState = true;
+    Serial.println("Entering Error State!");
+    turnOffCounterLeds();
     digitalWrite(ledActionStartedPin, LOW);
     digitalWrite(ledActionCompletedPin, LOW);
-    actionAlreadyDoneThisPress = false; // Reset permission when D2 is released
+    noTone(buzzerPin);
   }
 
   deviceButtonPreviouslyPressed = deviceButtonPressed;
+  actionButtonPreviouslyPressed = actionButtonPressed;
 }
