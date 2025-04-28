@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Constants
+// === Constants ===
 constexpr int DEVICE_BUTTON_PIN = 2;
 constexpr int ACTION_BUTTON_PIN = 10;
 constexpr int LED_ACTION_STARTED_PIN = 13;
@@ -8,16 +8,20 @@ constexpr int LED_ACTION_COMPLETED_PIN = 8;
 constexpr int BUZZER_PIN = 9;
 constexpr int COUNTER_LED_PINS[5] = {3, 4, 5, 6, 7};
 constexpr int MAX_COUNTER = 5;
+
 constexpr unsigned long ACTION_HOLD_TIME_MS = 2000;
 constexpr unsigned long DISPLAY_TIMEOUT_MS = 5000;
+
 constexpr int BEEP_FREQUENCY = 700;
 constexpr int ERROR_FREQUENCY = 300;
 
+// === System State ===
 enum class SystemState {
     NORMAL,
     ERROR
 };
 
+// === Button Class ===
 class Button {
 private:
     const int pin;
@@ -47,13 +51,14 @@ public:
     }
 };
 
+// === LED Manager ===
 class LedManager {
 private:
     const int* counterLedPins;
     const int ledCount;
 
 public:
-    LedManager(const int* pins, int count) 
+    LedManager(const int* pins, int count)
         : counterLedPins(pins), ledCount(count) {
         for (int i = 0; i < count; i++) {
             pinMode(counterLedPins[i], OUTPUT);
@@ -76,15 +81,16 @@ public:
         }
     }
 
-    void setActionStarted(bool state) {
-        digitalWrite(LED_ACTION_STARTED_PIN, state ? HIGH : LOW);
+    void setActionStarted(bool on) {
+        digitalWrite(LED_ACTION_STARTED_PIN, on ? HIGH : LOW);
     }
 
-    void setActionCompleted(bool state) {
-        digitalWrite(LED_ACTION_COMPLETED_PIN, state ? HIGH : LOW);
+    void setActionCompleted(bool on) {
+        digitalWrite(LED_ACTION_COMPLETED_PIN, on ? HIGH : LOW);
     }
 };
 
+// === Sound Manager ===
 class SoundManager {
 private:
     const int pin;
@@ -121,6 +127,7 @@ public:
     }
 };
 
+// === Device System ===
 class DeviceSystem {
 private:
     Button deviceButton;
@@ -128,15 +135,19 @@ private:
     LedManager leds;
     SoundManager sound;
     SystemState state = SystemState::NORMAL;
+
     int counter = 0;
+    bool pendingCounterIncrement = false;
     bool actionInProgress = false;
     bool actionDoneThisCycle = false;
     bool displayCounter = false;
+    bool deviceButtonCurrentlyPressed = false;
+
     unsigned long actionStartTime = 0;
     unsigned long deviceButtonReleaseTime = 0;
 
 public:
-    DeviceSystem() 
+    DeviceSystem()
         : deviceButton(DEVICE_BUTTON_PIN)
         , actionButton(ACTION_BUTTON_PIN)
         , leds(COUNTER_LED_PINS, MAX_COUNTER)
@@ -163,10 +174,12 @@ private:
     }
 
     void handleNormalState() {
-        if (deviceButton.isPressed()) {
+        bool devicePressed = deviceButton.isPressed();
+        deviceButtonCurrentlyPressed = devicePressed;
+
+        if (devicePressed) {
             deviceButtonReleaseTime = millis();
             displayCounter = true;
-            updateDisplay(); // Immediate update when device button is pressed
 
             if (!actionDoneThisCycle && actionButton.wasJustPressed()) {
                 startAction();
@@ -174,17 +187,34 @@ private:
         } else {
             if (millis() - deviceButtonReleaseTime >= DISPLAY_TIMEOUT_MS) {
                 displayCounter = false;
-                updateDisplay(); // Force update when hiding counter
+                leds.turnOffCounterLeds();
+            }
+            if (actionInProgress) {
+                cancelAction();
             }
             actionDoneThisCycle = false;
-            actionInProgress = false;
-            leds.setActionStarted(false);
         }
 
         if (actionInProgress) {
             handleActionInProgress();
-        } else if (actionButton.wasJustReleased()) {
+        }
+
+        if (actionButton.wasJustReleased()) {
             leds.setActionCompleted(false);
+            sound.stopTone();
+            actionInProgress = false;
+
+            if (pendingCounterIncrement && counter < MAX_COUNTER) {
+                counter++;
+                pendingCounterIncrement = false;
+                updateDisplay();
+                Serial.print("Counter incremented to: ");
+                Serial.println(counter);
+            }
+        }
+
+        if (displayCounter && !pendingCounterIncrement) {
+            updateDisplay();
         }
 
         if (counter >= MAX_COUNTER && !deviceButton.isPressed()) {
@@ -204,9 +234,7 @@ private:
         sound.playSweepTone(progress);
 
         if (!actionButton.isPressed()) {
-            actionInProgress = false;
-            sound.stopTone();
-            leds.setActionStarted(false);
+            cancelAction();
         }
 
         if (heldDuration >= ACTION_HOLD_TIME_MS && !actionDoneThisCycle) {
@@ -216,29 +244,28 @@ private:
 
     void completeAction() {
         actionDoneThisCycle = true;
+        pendingCounterIncrement = true;
         actionInProgress = false;
-        sound.stopTone();
+
         leds.setActionStarted(false);
         leds.setActionCompleted(true);
-
-        if (counter < MAX_COUNTER) {
-            counter++;
-        }
-
+        sound.stopTone();
         sound.playConfirmationBeep();
-        updateDisplay();
+        Serial.println("Action completed");
+    }
 
-        Serial.print("Action completed. Counter: ");
-        Serial.println(counter);
+    void cancelAction() {
+        actionInProgress = false;
+        leds.setActionStarted(false);
+        leds.setActionCompleted(false);
+        sound.stopTone();
+        pendingCounterIncrement = false;
+        Serial.println("Action cancelled");
     }
 
     void updateDisplay() {
         if (displayCounter) {
             leds.updateCounterLeds(counter);
-            Serial.print("Updating display - Counter: ");
-            Serial.print(counter);
-            Serial.print(", LEDs on: ");
-            Serial.println(MAX_COUNTER - counter);
         } else {
             leds.turnOffCounterLeds();
         }
