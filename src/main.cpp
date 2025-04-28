@@ -146,7 +146,6 @@ private:
     bool actionInProgress = false;
     bool actionDoneThisCycle = false;
     bool displayCounter = false;
-    bool animationPlayed = false;
     bool deviceButtonCurrentlyPressed = false;
     unsigned long actionStartTime = 0;
     unsigned long deviceButtonReleaseTime = 0;
@@ -180,11 +179,17 @@ private:
 
     void handleNormalState() {
         bool devicePressed = deviceButton.isPressed();
+        bool deviceJustPressed = deviceButton.wasJustPressed();
+        bool deviceJustReleased = deviceButton.wasJustReleased();
         deviceButtonCurrentlyPressed = devicePressed;
 
         if (devicePressed) {
             deviceButtonReleaseTime = millis();
-            displayCounter = true;
+            
+            if (deviceJustPressed) {
+                displayCounter = true;
+                playCounterAnimation();
+            }
 
             if (!actionDoneThisCycle && actionButton.wasJustPressed()) {
                 startAction();
@@ -268,15 +273,15 @@ private:
         Serial.println("Action cancelled");
     }
 
+    void playCounterAnimation() {
+        leds.animateCounterLeds(counter);
+    }
+
     void updateDisplay() {
         if (displayCounter) {
-            if (!animationPlayed) {
-                leds.animateCounterLeds(counter);
-                animationPlayed = true;
-            }
+            leds.updateCounterLeds(counter);
         } else {
             leds.turnOffCounterLeds();
-            animationPlayed = false;
         }
     }
 
