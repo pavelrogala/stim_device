@@ -274,17 +274,15 @@ private:
     void handleSetupState() {
         // Handle setup mode - configure initial counter value
         if (deviceButton.wasJustPressed()) {
-            if (setupCounter < MAX_COUNTER - 1) {
-                setupCounter++;
-                leds.updateSetupDisplay(setupCounter);
-                Serial.print("Setup: LEDs turned off = ");
-                Serial.println(setupCounter);
-            } else {
-                sound.playErrorTone();
-                Serial.println("Setup: Cannot have 0 lives!");
+            setupCounter++;
+            if (setupCounter >= MAX_COUNTER) {
+                setupCounter = 0; // Wrap back to 0 if reaching MAX_COUNTER
             }
+            leds.updateSetupDisplay(setupCounter);
+            Serial.print("Setup: LEDs turned off = ");
+            Serial.println(setupCounter);
         }
-
+    
         if (actionButton.wasJustPressed()) {
             counter = setupCounter;
             displayCounter = true;
@@ -294,6 +292,7 @@ private:
             Serial.println("Setup complete. Starting game...");
         }
     }
+    
 
     void handleNormalState() {
         // Handle normal operation state
