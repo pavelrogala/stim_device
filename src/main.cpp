@@ -52,27 +52,41 @@ class Button {
 private:
     const int pin;  // Which pin this button is connected to
     bool previouslyPressed = false;  // Remembers if button was pressed last time
+    unsigned long lastDebounceTime = 0; // Last time the pin was toggled
+    bool lastStableState = HIGH; // Last stable state (HIGH = not pressed)
+    bool lastReadState = HIGH;   // Last read state from pin
+    static constexpr unsigned long debounceDelay = 50; // 50ms debounce
 
 public:
     Button(int pin) : pin(pin) {
         pinMode(pin, INPUT_PULLUP);  // Set up the button pin
     }
 
-    bool isPressed() const {
-        return digitalRead(pin) == LOW;  // Button is pressed when pin reads LOW
+    bool isPressed() {
+        bool reading = digitalRead(pin);
+        if (reading != lastReadState) {
+            lastDebounceTime = millis();
+            lastReadState = reading;
+        }
+        if ((millis() - lastDebounceTime) > debounceDelay) {
+            if (lastStableState != reading) {
+                lastStableState = reading;
+            }
+        }
+        return lastStableState == LOW; // Button is pressed when pin reads LOW
     }
 
     bool wasJustPressed() {
-        bool currentState = isPressed();
-        bool result = currentState && !previouslyPressed;  // True only when button is first pressed
-        previouslyPressed = currentState;
+        bool pressed = isPressed();
+        bool result = pressed && !previouslyPressed;
+        previouslyPressed = pressed;
         return result;
     }
 
     bool wasJustReleased() {
-        bool currentState = isPressed();
-        bool result = !currentState && previouslyPressed;  // True only when button is first released
-        previouslyPressed = currentState;
+        bool pressed = isPressed();
+        bool result = !pressed && previouslyPressed;
+        previouslyPressed = pressed;
         return result;
     }
 };
