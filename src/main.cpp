@@ -17,10 +17,10 @@ constexpr int COUNTER_LED_PINS[5] = {3, 4, 5, 6, 7};  // The 5 LEDs that show th
 // - How the device sounds and looks
 constexpr int MAX_COUNTER = 5;          // Number of actions needed before error state
 constexpr unsigned long ACTION_HOLD_TIME_MS = 2000;  // How long to hold D10 for action complete (in milliseconds)
-constexpr unsigned long DISPLAY_TIMEOUT_MS = 5000;   // How long to show counter after releasing D2 (in milliseconds)
+constexpr unsigned long DISPLAY_TIMEOUT_MS = 2500;   // How long to show counter after releasing D2 (in milliseconds)
 
 // === SOUND CONFIGURATION ===
-constexpr int BEEP_FREQUENCY = 700;     // Frequency of the confirmation beep (in Hz)
+constexpr int BEEP_FREQUENCY = 600;     // Frequency of the confirmation beep (in Hz)
 constexpr int ERROR_FREQUENCY = 300;    // Frequency of the error tone (in Hz)
 constexpr unsigned long BEEP_DURATION = 100;    // How long each beep lasts (in milliseconds)
 constexpr unsigned long BEEP_PAUSE = 100;       // Pause between beeps (in milliseconds)
@@ -28,9 +28,9 @@ constexpr unsigned long ERROR_TONE_DURATION = 150;  // How long each error tone 
 constexpr int CONFIRMATION_BEEPS = 3;   // Number of beeps for confirmation
 
 // === LED ANIMATION CONFIGURATION ===
-constexpr int LED_ANIMATION_SPEED = 150;  // Speed of LED animations (in milliseconds)
+constexpr int LED_ANIMATION_SPEED = 60;  // Speed of LED animations (in milliseconds)
 constexpr int LED_FLICKER_MIN = 30;     // Minimum flicker duration (in milliseconds)
-constexpr int LED_FLICKER_MAX = 120;    // Maximum flicker duration (in milliseconds)
+constexpr int LED_FLICKER_MAX = 60;    // Maximum flicker duration (in milliseconds)
 constexpr int LED_FLICKER_MIN_COUNT = 3;  // Minimum number of flickers
 constexpr int LED_FLICKER_MAX_COUNT = 6;  // Maximum number of flickers
 constexpr unsigned long ERROR_LED_FLASH_DURATION = 150;  // Duration of error LED flashes (in milliseconds)
