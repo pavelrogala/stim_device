@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <Config.h>
+#include "ButtonManager.h"
+#include "LedManager.h"
+#include "SoundManager.h"
 
 // === SYSTEM STATES ===
 // The device can be in one of three states:
@@ -12,189 +15,12 @@ enum class SystemState {
     ERROR
 };
 
-// === BUTTON CLASS ===
-// Handles button input and detects when buttons are pressed or released
-class Button {
-private:
-    const int pin;  // Which pin this button is connected to
-    bool previouslyPressed = false;  // Remembers if button was pressed last time
-    unsigned long lastDebounceTime = 0; // Last time the pin was toggled
-    bool lastStableState = HIGH; // Last stable state (HIGH = not pressed)
-    bool lastReadState = HIGH;   // Last read state from pin
-    static constexpr unsigned long debounceDelay = 50; // 50ms debounce
-
-public:
-    Button(int pin) : pin(pin) {
-        pinMode(pin, INPUT_PULLUP);  // Set up the button pin
-    }
-
-    bool isPressed() {
-        bool reading = digitalRead(pin);
-        if (reading != lastReadState) {
-            lastDebounceTime = millis();
-            lastReadState = reading;
-        }
-        if ((millis() - lastDebounceTime) > debounceDelay) {
-            if (lastStableState != reading) {
-                lastStableState = reading;
-            }
-        }
-        return lastStableState == LOW; // Button is pressed when pin reads LOW
-    }
-
-    bool wasJustPressed() {
-        bool pressed = isPressed();
-        bool result = pressed && !previouslyPressed;
-        previouslyPressed = pressed;
-        return result;
-    }
-
-    bool wasJustReleased() {
-        bool pressed = isPressed();
-        bool result = !pressed && previouslyPressed;
-        previouslyPressed = pressed;
-        return result;
-    }
-};
-
-// === LED MANAGER ===
-// Controls all the LEDs in the system
-class LedManager {
-private:
-    const int* counterLedPins;  // Array of pins for the counter LEDs
-    const int ledCount;         // Number of counter LEDs
-    int lastCounter = -1;       // Remembers last counter value
-
-public:
-    LedManager(const int* pins, int count)
-        : counterLedPins(pins), ledCount(count) {
-        // Set up all LED pins as outputs and turn them off
-        for (int i = 0; i < count; i++) {
-            pinMode(counterLedPins[i], OUTPUT);
-            digitalWrite(counterLedPins[i], LOW);
-        }
-        pinMode(LED_ACTION_STARTED_PIN, OUTPUT);
-        pinMode(LED_ACTION_COMPLETED_PIN, OUTPUT);
-    }
-
-    void turnOffCounterLeds() {
-        // Turn off all counter LEDs
-        for (int i = 0; i < ledCount; i++) {
-            digitalWrite(counterLedPins[i], LOW);
-        }
-        lastCounter = -1;
-    }
-
-    void updateCounterLeds(int counter) {
-        int ledsOn = MAX_COUNTER - counter;  // Calculate how many LEDs should be on
-
-        // If counter increased, flicker the LED that just turned off
-        if (lastCounter != -1 && counter > lastCounter) {
-            int ledToFlicker = MAX_COUNTER - lastCounter - 1;
-            if (ledToFlicker >= 0 && ledToFlicker < ledCount) {
-                int flickers = random(LED_FLICKER_MIN_COUNT, LED_FLICKER_MAX_COUNT);  // Random number of flickers
-                for (int i = 0; i < flickers; i++) {
-                    digitalWrite(counterLedPins[ledToFlicker], LOW);
-                    delay(random(LED_FLICKER_MIN, LED_FLICKER_MAX));  // Random flicker duration
-                    digitalWrite(counterLedPins[ledToFlicker], HIGH);
-                    delay(random(LED_FLICKER_MIN, LED_FLICKER_MAX));
-                }
-                digitalWrite(counterLedPins[ledToFlicker], LOW);
-            }
-        }
-
-        // Update all LEDs based on counter value
-        for (int i = 0; i < ledCount; i++) {
-            if (i < ledsOn) {
-                digitalWrite(counterLedPins[i], HIGH);
-            } else {
-                digitalWrite(counterLedPins[i], LOW);
-            }
-        }
-
-        lastCounter = counter;
-    }
-
-    void animateCounterLeds(int counter) {
-        // Animate LEDs turning on one by one
-        int ledsOn = MAX_COUNTER - counter;
-        for (int i = 0; i < ledsOn; i++) {
-            digitalWrite(counterLedPins[i], HIGH);
-            delay(LED_ANIMATION_SPEED);  // Control animation speed
-        }
-        for (int i = ledsOn; i < ledCount; i++) {
-            digitalWrite(counterLedPins[i], LOW);
-        }
-    }
-
-    void setActionStarted(bool on) {
-        digitalWrite(LED_ACTION_STARTED_PIN, on ? HIGH : LOW);
-    }
-
-    void setActionCompleted(bool on) {
-        digitalWrite(LED_ACTION_COMPLETED_PIN, on ? HIGH : LOW);
-    }
-
-    void updateSetupDisplay(int setupCounter) {
-        // Show setup progress on counter LEDs
-        int ledsOn = MAX_COUNTER - setupCounter;
-        for (int i = 0; i < MAX_COUNTER; i++) {
-            if (i < ledsOn) {
-                digitalWrite(counterLedPins[i], HIGH);
-            } else {
-                digitalWrite(counterLedPins[i], LOW);
-            }
-        }
-    }
-};
-
-// === SOUND MANAGER ===
-// Handles all sound effects in the system
-class SoundManager {
-private:
-    const int pin;  // Which pin the buzzer is connected to
-
-public:
-    SoundManager(int pin) : pin(pin) {
-        pinMode(pin, OUTPUT);
-    }
-
-    void playConfirmationBeep() {
-        // Play three short beeps to confirm action completion
-        for (int i = 0; i < CONFIRMATION_BEEPS; i++) {
-            tone(pin, BEEP_FREQUENCY);
-            delay(BEEP_DURATION);
-            noTone(pin);
-            delay(BEEP_PAUSE);
-        }
-    }
-
-    void playErrorTone() {
-        // Play error tone (high-low sequence)
-        tone(pin, BEEP_FREQUENCY);
-        delay(ERROR_TONE_DURATION);
-        tone(pin, ERROR_FREQUENCY);
-        delay(ERROR_TONE_DURATION);
-        noTone(pin);
-    }
-
-    void playSweepTone(float progress) {
-        // Play a sweeping tone during action hold
-        int freq = ERROR_FREQUENCY + (progress * (BEEP_FREQUENCY - ERROR_FREQUENCY));
-        tone(pin, freq);
-    }
-
-    void stopTone() {
-        noTone(pin);
-    }
-};
-
 // === DEVICE SYSTEM ===
 // Main system class that coordinates all components
 class DeviceSystem {
 private:
-    Button deviceButton;    // Main button (D2)
-    Button actionButton;    // Action button (D10)
+    ButtonManager deviceButton;    // Main button (D2)
+    ButtonManager actionButton;    // Action button (D10)
     LedManager leds;       // LED manager
     SoundManager sound;    // Sound manager
     SystemState state = SystemState::SETUP;  // Current system state
@@ -263,7 +89,9 @@ private:
             Serial.println(setupCounter);
         }
     
-        if (actionButton.wasJustPressed()) {
+        static bool gameStarted = false;
+        if (!gameStarted && actionButton.wasHeldFor(1000)) {
+            gameStarted = true;
             counter = setupCounter;
             displayCounter = true;
             leds.updateCounterLeds(counter);
@@ -278,7 +106,6 @@ private:
         // Handle normal operation state
         bool devicePressed = deviceButton.isPressed();
         bool deviceJustPressed = deviceButton.wasJustPressed();
-        bool deviceJustReleased = deviceButton.wasJustReleased();
         deviceButtonCurrentlyPressed = devicePressed;
 
         if (devicePressed) {
