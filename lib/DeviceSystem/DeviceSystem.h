@@ -7,6 +7,8 @@
 #include "SoundManager.h"
 #include "Config.h"
 
+class SystemStateHandler; // Forward declaration
+
 // === SYSTEM STATES ===
 enum class SystemState {
     SETUP,
@@ -21,6 +23,8 @@ private:
     LedManager leds;
     SoundManager sound;
     SystemState state;
+    SystemStateHandler* currentStateHandler; // Pointer to current state handler
+
     int counter;
     int setupCounter;
     bool pendingCounterIncrement;
@@ -33,20 +37,33 @@ private:
 
 public:
     DeviceSystem();
+    ~DeviceSystem();
+
     void begin();
     void update();
 
-private:
-    void handleErrorState();
-    void handleSetupState();
-    void handleNormalState();
-    void startAction();
-    void handleActionInProgress();
-    void completeAction();
-    void cancelAction();
-    void playCounterAnimation();
+    // State transition
+    void setState(SystemState newState);
+
+    // Helper methods
+    void resetLeds();
+    void playErrorSequence();
     void updateDisplay();
-    void enterErrorState();
+
+    // Getters for state handlers
+    ButtonManager& getDeviceButton();
+    ButtonManager& getActionButton();
+    LedManager& getLeds();
+    SoundManager& getSound();
+    int& getCounter();
+    int& getSetupCounter();
+    bool& isPendingCounterIncrement();
+    bool& isActionInProgress();
+    bool& isActionDoneThisCycle();
+    bool& isDisplayCounter();
+    bool& isDeviceButtonCurrentlyPressed();
+    unsigned long& getActionStartTime();
+    unsigned long& getDeviceButtonReleaseTime();
 };
 
 #endif // DEVICE_SYSTEM_H
